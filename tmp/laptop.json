@@ -1,27 +1,27 @@
 {
-  "id": "d05e7d8d-618e-443c-ae28-a9a94e7d5a34",
-  "brand": "Dell",
-  "name": "XPS",
+  "id": "7253fb50-7ece-460d-81c4-a21a85211d40",
+  "brand": "Apple",
+  "name": "Macbook Air",
   "cpu": {
-    "brand": "Intel",
-    "name": "Core i3-1005G1",
+    "brand": "AMD",
+    "name": "Ryzen 3 PRO 3200GE",
     "number_cores": 2,
-    "number_threads": 7,
-    "min_ghz": 3.124848254433328,
-    "max_ghz": 4.705556216403272
+    "number_threads": 9,
+    "min_ghz": 2.4023310656408667,
+    "max_ghz": 2.764076714602438
   },
   "ram": {
-    "value": 34,
+    "value": "38",
     "unit": "GIGABYTE"
   },
   "gpus": [
     {
       "brand": "AMD",
-      "name": "RX 5700-XT",
-      "min_ghz": 1.145273771813872,
-      "max_ghz": 1.2695966690596865,
+      "name": "RX Vega-56",
+      "min_ghz": 1.1461740462541687,
+      "max_ghz": 1.9379482695801866,
       "memory": {
-        "value": 3,
+        "value": "6",
         "unit": "GIGABYTE"
       }
     }
@@ -30,32 +30,33 @@
     {
       "driver": "SSD",
       "memory": {
-        "value": 139,
+        "value": "916",
         "unit": "GIGABYTE"
       }
     },
     {
       "driver": "HDD",
       "memory": {
-        "value": 4,
+        "value": "6",
         "unit": "TERABYTE"
       }
     }
   ],
   "screen": {
-    "size_inch": 15.867447,
+    "size_inch": 16.892302,
     "resolution": {
-      "width": 5169,
-      "height": 2908
+      "width": 2156,
+      "height": 1213
     },
-    "panel": "IPS"
+    "panel": "IPS",
+    "multitouch": true
   },
   "keyboard": {
-    "layout": "QWERTZ",
+    "layout": "QWERTY",
     "backlit": true
   },
-  "weight_kg": 2.1812358655145276,
-  "price_usd": 2909.030871504372,
-  "release_year": 2017,
-  "updated_at": "2023-01-13T22:00:19.535278Z"
+  "weight_kg": 1.6800270316781707,
+  "price_usd": 3360.980022897039,
+  "release_year": 2015,
+  "updated_at": "2023-01-18T06:24:06.129588300Z"
 }

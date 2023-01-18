@@ -27,6 +27,8 @@ func TestFileSerializer(t *testing.T) {
 	err = serializer.ReadProtobufFromBinaryFile(binaryFile, laptop2)
 	require.NoError(t, err)
 
+	//
+
 	// require.Equal(t, jsonT, json)
 
 	require.True(t, proto.Equal(laptop1, laptop2))
