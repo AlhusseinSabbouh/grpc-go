@@ -16,14 +16,61 @@ import (
 )
 
 type laptopServer struct {
-	store      LaptopStore
-	imageStore ImageStore
+	store       LaptopStore
+	imageStore  ImageStore
+	ratingStore RatingStore
 	pb.UnimplementedLaptopServiceServer
 }
 
-func NewLaptopServer(store LaptopStore, imageStore ImageStore) *laptopServer {
-	return &laptopServer{store: store, imageStore: imageStore}
+func NewLaptopServer(store LaptopStore, imageStore ImageStore, ratingStore RatingStore) *laptopServer {
+	return &laptopServer{store: store, imageStore: imageStore, ratingStore: ratingStore}
+}
 
+func (server *laptopServer) RateLaptop(stream pb.LaptopService_RateLaptopServer) error {
+	for {
+		err := contextError(stream.Context())
+		if err != nil {
+			return err
+		}
+
+		req, err := stream.Recv()
+		if err == io.EOF {
+			log.Print("no more data")
+			break
+		}
+		if err != nil {
+			return status.Error(codes.Unknown, "something got error while receiving stream")
+		}
+
+		laptopId := req.GetLaptopId()
+		score := req.GetScore()
+
+		log.Printf("we go a laptop with id : %v , and the score is %v ", laptopId, score)
+		found, err := server.store.Find(laptopId)
+		if err != nil || found == nil {
+			return status.Error(codes.NotFound, "we cannot find the laptop with this id")
+		}
+
+		rating, err := server.ratingStore.Add(laptopId, score)
+
+		if err != nil {
+			return status.Error(codes.Internal, "cannot add the rate to laptop")
+		}
+		res := &pb.RateLaptopResponse{
+			LaptopId:     laptopId,
+			AverageSocre: rating.Avg(),
+			RatedCount:   rating.Count,
+		}
+
+		err = stream.Send(res)
+
+		if err != nil {
+			return status.Error(codes.Unknown, "connot send the response to the client")
+		}
+
+	}
+
+	return nil
 }
 
 const maxImageSize = 1 << 20

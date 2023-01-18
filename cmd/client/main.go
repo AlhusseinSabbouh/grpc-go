@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"grpc/pb"
 	"grpc/sample"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,20 +34,24 @@ func main() {
 		log.Fatal("cannot dial server: ", err)
 	}
 	laptopClient := pb.NewLaptopServiceClient(conn)
-	laptopClient1 := pb.NewLaptopServiceClient(conn)
+	// laptopClient1 := pb.NewLaptopServiceClient(conn)
 	// laptopClient2 := pb.NewLaptopServiceClient(conn)
 	// laptopClient3 := pb.NewLaptopServiceClient(conn)
 	// laptopClient4 := pb.NewLaptopServiceClient(conn)
 	// testCreateLaptop(laptopClient)
 	// testSearchLaptop(laptopClient)
-	waitGroup.Add(2)
+
+	//! test rate Laptop
+	testRateLaptop(laptopClient)
+
+	// waitGroup.Add(2)
+	//! test Upload Image
 	// go testUploadImage(laptopClient, time.Microsecond*1000, "user1")
 	// go testUploadImage(laptopClient1, time.Microsecond*10, "user2")
 
-
-	go testSearchLaptop(laptopClient, "user1")
-	go testSearchLaptop(laptopClient1, "user2")
-
+	//! test Search Laptop
+	// go testSearchLaptop(laptopClient, "user1")
+	// go testSearchLaptop(laptopClient1, "user2")
 
 	waitGroup.Wait()
 
@@ -182,6 +188,76 @@ func searchLaptop(client pb.LaptopServiceClient, filter *pb.Filter, userName str
 
 }
 
+func rateLaptop(client pb.LaptopServiceClient, laptopIds []string, laptopScores []float64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	stream, err := client.RateLaptop(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot rate the laptop %v", err)
+	}
+
+	waitResponse := make(chan error)
+
+	go func() {
+		for {
+			res, err := stream.Recv()
+			if err == io.EOF {
+				log.Print("no more responses")
+				waitResponse <- nil
+				return
+			}
+			if err != nil {
+				waitResponse <- fmt.Errorf("cannot receive stream response")
+				return
+			}
+			log.Print("received response: ", res)
+		}
+	}()
+
+	waitGroup.Add(1)
+	go func() {
+		for i, laptopId := range laptopIds {
+			req := &pb.RateLaptopRequest{
+				LaptopId: laptopId,
+				Score:    laptopScores[i],
+			}
+			err := stream.Send(req)
+			if err != nil {
+				waitResponse <- fmt.Errorf("cannot send stream response")
+				waitGroup.Done()
+				return
+			}
+			log.Print("sent request: , ", req)
+		}
+		err = stream.CloseSend()
+		if err != nil {
+			waitResponse <- fmt.Errorf("cannot send stream response")
+			waitGroup.Done()
+			return
+		}
+		waitGroup.Done()
+	}()
+
+	// for i, laptopId := range laptopIds {
+	// 	req := &pb.RateLaptopRequest{
+	// 		LaptopId: laptopId,
+	// 		Score:    laptopScores[i],
+	// 	}
+	// 	err := stream.Send(req)
+	// 	if err != nil {
+	// 		return fmt.Errorf("cannot sent stream request")
+	// 	}
+	// 	log.Print("sent request: , ", req)
+
+	// }
+
+	waitGroup.Wait()
+	err = <-waitResponse
+	return err
+
+}
+
 func testCreateLaptop(laptopClient pb.LaptopServiceClient) {
 	createLaptop(laptopClient, sample.NewLaptop())
 }
@@ -206,7 +282,36 @@ func testUploadImage(laptopClient pb.LaptopServiceClient, times time.Duration, u
 	uploadImage(laptopClient, laptop.GetId(), "tmp/laptop.jpg", times, userName)
 	// uploadImage(laptopClient, laptop.GetId(), "tmp/laptop.jpg", time.Microsecond*500)
 	waitGroup.Done()
+}
 
+func testRateLaptop(client pb.LaptopServiceClient) {
+	n := 3
+	laptopIDs := make([]string, 3)
+	for i := 0; i < n; i++ {
+		laptop := sample.NewLaptop()
+		laptopIDs[i] = laptop.GetId()
+		createLaptop(client, laptop)
+	}
+	scores := make([]float64, n)
+
+	for {
+		fmt.Println("rate laptop (y/n)? ")
+		var answer string
+		fmt.Scan(&answer)
+		if strings.ToLower(answer) != "y" {
+			break
+		}
+
+		for i := 0; i < n; i++ {
+			scores[i] = sample.RandomLaptopScore()
+		}
+
+		err := rateLaptop(client, laptopIDs, scores)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	}
 }
 
 func contextError(ctx context.Context) error {
