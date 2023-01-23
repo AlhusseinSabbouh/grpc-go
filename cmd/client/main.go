@@ -47,6 +47,9 @@ func main() {
 
 	authClient := client.NewAuthClient(conn1, username, password)
 	authInterceptor, err := client.NewAuthInterceptor(authClient, authMethods(), refreshDuration)
+	if err != nil {
+		log.Fatal("cannot creaet auth interceptor: ", err)
+	}
 
 	conn2, err := grpc.Dial(*serverAdderss, grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(authInterceptor.Unary()),
