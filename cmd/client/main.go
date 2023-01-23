@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
+	"grpc/client"
 	"grpc/pb"
 	"grpc/sample"
-	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,17 +20,22 @@ import (
 
 var waitGroup = sync.WaitGroup{}
 
+const (
+	username = "user1"
+	password = "secret"
+)
+
 func main() {
 
 	serverAdderss := flag.String("address", "", "the server address  : ")
 	flag.Parse()
 	log.Printf("dial server %s", *serverAdderss)
 
-	conn, err := grpc.Dial(*serverAdderss, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn1, err := grpc.Dial(*serverAdderss, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatal("cannot dial server: ", err)
 	}
-	laptopClient := pb.NewLaptopServiceClient(conn)
+
 	// laptopClient1 := pb.NewLaptopServiceClient(conn)
 	// laptopClient2 := pb.NewLaptopServiceClient(conn)
 	// laptopClient3 := pb.NewLaptopServiceClient(conn)
@@ -41,8 +43,22 @@ func main() {
 	// testCreateLaptop(laptopClient)
 	// testSearchLaptop(laptopClient)
 
+	refreshDuration := time.Second * 15
+
+	authClient := client.NewAuthClient(conn1, username, password)
+	authInterceptor, err := client.NewAuthInterceptor(authClient, authMethods(), refreshDuration)
+
+	conn2, err := grpc.Dial(*serverAdderss, grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(authInterceptor.Unary()),
+		grpc.WithStreamInterceptor(authInterceptor.Stream()),
+	)
+
+	if err != nil {
+		log.Fatal("cannot dial server: ", err)
+	}
+	laptopClient := client.NewLaptopClient(conn2)
 	//! test rate Laptop
-	testRateLaptop(laptopClient)
+	testCreateLaptop(laptopClient)
 
 	// waitGroup.Add(2)
 	//! test Upload Image
@@ -59,212 +75,13 @@ func main() {
 
 }
 
-func uploadImage(client pb.LaptopServiceClient, laptopId string, imagePath string, time1 time.Duration, userName string) {
-	file, err := os.Open(imagePath)
-	if err != nil {
-		log.Fatal("cannot open Image file", err)
-	}
-	defer file.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*50)
-	defer cancel()
-
-	stream, err := client.UploadImage(ctx)
-	if err != nil {
-		log.Fatal("cannot create stream with the server")
-	}
-
-	req := &pb.UploadImageRequest{
-		Data: &pb.UploadImageRequest_ImageInfo{
-			ImageInfo: &pb.ImageInfo{
-				LaptopId:  laptopId,
-				ImageType: filepath.Ext(imagePath),
-				UserName:  userName,
-			},
-		},
-	}
-	err = stream.Send(req)
-	if err != nil {
-		log.Fatal("cannot send image info to server")
-	}
-
-	reader := bufio.NewReader(file)
-	buffer := make([]byte, 1024)
-
-	for {
-
-		if err != nil {
-			log.Fatal("cannot send more data")
-		}
-
-		n, err := reader.Read(buffer)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatal("cannot read chunk to buffer ", err)
-		}
-		req := &pb.UploadImageRequest{
-			Data: &pb.UploadImageRequest_Chunk{
-				Chunk: buffer[:n],
-			},
-		}
-
-		time.Sleep(time1)
-		err = contextError(stream.Context())
-		if err != nil {
-			log.Fatal("some thing err ", err)
-		}
-
-		err = stream.Send(req)
-		if err != nil {
-			log.Fatal("cannot send chunk to server: ", err, stream.RecvMsg(nil))
-		}
-	}
-	res, err := stream.CloseAndRecv()
-	if err != nil {
-		log.Fatal("cannot receive the response", err)
-	}
-
-	log.Printf("image uploaded with id %s, and size %v", res.GetId(), res.GetSize())
-
+func testCreateLaptop(laptopClient *client.LaptopClient) {
+	laptopClient.CreateLaptop(sample.NewLaptop())
 }
 
-func createLaptop(client pb.LaptopServiceClient, laptop *pb.Laptop) {
-	req := &pb.CreateLaptopRequest{
-		Laptop: laptop,
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	res, err := client.CreateLaptop(ctx, req)
-
-	if err != nil {
-		st, ok := status.FromError(err)
-		if ok && st.Code() == codes.AlreadyExists {
-			log.Print("laptop already exists")
-		} else {
-			log.Fatal("cannot create laptop: ", err)
-		}
-		return
-	}
-	log.Printf("created laptop with id %s", res.GetId())
-
-}
-
-func searchLaptop(client pb.LaptopServiceClient, filter *pb.Filter, userName string) {
-	log.Print("we search on laptop with filter ", filter)
-
-	req := &pb.SearchLaptopRequest{
-		Filter:   filter,
-		UserName: userName,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*50)
-	defer cancel()
-	stream, err := client.SearchLaptop(ctx, req)
-	if err != nil {
-		log.Fatal("cannot search for laptop", err)
-	}
-
-	for {
-		res, err := stream.Recv()
-
-		if err == io.EOF {
-			return
-		}
-		if err != nil {
-			waitGroup.Done()
-			log.Fatal("cannot recive response : ", err)
-		}
-		laptop := res.GetLaptop()
-		log.Print("- found: ", laptop.GetId())
-		log.Print("  + brand: ", laptop.GetBrand())
-		log.Print("  + name: ", laptop.GetName())
-		log.Print("  + cpu cores: ", laptop.GetCpu().GetNumberCores())
-		log.Print("  + cpu min ghz: ", laptop.GetCpu().GetMinGhz())
-		log.Print("  + ram: ", laptop.GetRam())
-		log.Print("  + price: ", laptop.GetPriceUsd())
-	}
-
-}
-
-func rateLaptop(client pb.LaptopServiceClient, laptopIds []string, laptopScores []float64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	stream, err := client.RateLaptop(ctx)
-	if err != nil {
-		return fmt.Errorf("cannot rate the laptop %v", err)
-	}
-
-	waitResponse := make(chan error)
-
-	go func() {
-		for {
-			res, err := stream.Recv()
-			if err == io.EOF {
-				log.Print("no more responses")
-				waitResponse <- nil
-				return
-			}
-			if err != nil {
-				waitResponse <- fmt.Errorf("cannot receive stream response")
-				return
-			}
-			log.Print("received response: ", res)
-		}
-	}()
-
-	waitGroup.Add(1)
-	go func() {
-		for i, laptopId := range laptopIds {
-			req := &pb.RateLaptopRequest{
-				LaptopId: laptopId,
-				Score:    laptopScores[i],
-			}
-			err := stream.Send(req)
-			if err != nil {
-				waitResponse <- fmt.Errorf("cannot send stream response")
-				waitGroup.Done()
-				return
-			}
-			log.Print("sent request: , ", req)
-		}
-		err = stream.CloseSend()
-		if err != nil {
-			waitResponse <- fmt.Errorf("cannot send stream response")
-			waitGroup.Done()
-			return
-		}
-		waitGroup.Done()
-	}()
-
-	// for i, laptopId := range laptopIds {
-	// 	req := &pb.RateLaptopRequest{
-	// 		LaptopId: laptopId,
-	// 		Score:    laptopScores[i],
-	// 	}
-	// 	err := stream.Send(req)
-	// 	if err != nil {
-	// 		return fmt.Errorf("cannot sent stream request")
-	// 	}
-	// 	log.Print("sent request: , ", req)
-
-	// }
-
-	waitGroup.Wait()
-	err = <-waitResponse
-	return err
-
-}
-
-func testCreateLaptop(laptopClient pb.LaptopServiceClient) {
-	createLaptop(laptopClient, sample.NewLaptop())
-}
-
-func testSearchLaptop(laptopClient pb.LaptopServiceClient, userName string) {
+func testSearchLaptop(laptopClient *client.LaptopClient, userName string) {
 	for i := 0; i < 4; i++ {
-		createLaptop(laptopClient, sample.NewLaptop())
+		laptopClient.CreateLaptop(sample.NewLaptop())
 	}
 	filter := &pb.Filter{
 		MaxPriceUsd: 3000,
@@ -272,25 +89,25 @@ func testSearchLaptop(laptopClient pb.LaptopServiceClient, userName string) {
 		MinCpuGhz:   2.5,
 		MinRam:      &pb.Memory{Value: 8, Unit: pb.Memory_GIGABYTE},
 	}
-	searchLaptop(laptopClient, filter, userName)
+	laptopClient.SearchLaptop(filter, userName)
 	waitGroup.Done()
 }
 
-func testUploadImage(laptopClient pb.LaptopServiceClient, times time.Duration, userName string) {
+func testUploadImage(laptopClient *client.LaptopClient, times time.Duration, userName string) {
 	laptop := sample.NewLaptop()
-	createLaptop(laptopClient, laptop)
-	uploadImage(laptopClient, laptop.GetId(), "tmp/laptop.jpg", times, userName)
+	laptopClient.CreateLaptop(laptop)
+	laptopClient.UploadImage(laptop.GetId(), "tmp/laptop.jpg", times, userName)
 	// uploadImage(laptopClient, laptop.GetId(), "tmp/laptop.jpg", time.Microsecond*500)
 	waitGroup.Done()
 }
 
-func testRateLaptop(client pb.LaptopServiceClient) {
+func testRateLaptop(client *client.LaptopClient) {
 	n := 3
 	laptopIDs := make([]string, 3)
 	for i := 0; i < n; i++ {
 		laptop := sample.NewLaptop()
 		laptopIDs[i] = laptop.GetId()
-		createLaptop(client, laptop)
+		client.CreateLaptop(laptop)
 	}
 	scores := make([]float64, n)
 
@@ -306,7 +123,7 @@ func testRateLaptop(client pb.LaptopServiceClient) {
 			scores[i] = sample.RandomLaptopScore()
 		}
 
-		err := rateLaptop(client, laptopIDs, scores)
+		err := client.RateLaptop(laptopIDs, scores)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -322,5 +139,15 @@ func contextError(ctx context.Context) error {
 		return status.Error(codes.DeadlineExceeded, "deadline exceede")
 	default:
 		return nil
+	}
+}
+
+func authMethods() map[string]bool {
+	const laptopServicePath = "/techschool.pcbook.LaptopService/"
+
+	return map[string]bool{
+		laptopServicePath + "CreateLaptop": true,
+		laptopServicePath + "UploadImage":  true,
+		laptopServicePath + "RateLaptop":   true,
 	}
 }

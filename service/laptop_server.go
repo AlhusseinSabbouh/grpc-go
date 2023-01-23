@@ -106,9 +106,9 @@ func (server *laptopServer) UploadImage(stream pb.LaptopService_UploadImageServe
 		req, err := stream.Recv()
 		if err == io.EOF {
 			log.Print("we got all the data from user ", userName)
-
 			break
 		}
+
 		if err != nil {
 			return status.Error(codes.Internal, "something got error while receiveing the chunks")
 		}
@@ -176,6 +176,7 @@ func (server *laptopServer) SearchLaptop(req *pb.SearchLaptopRequest, stream pb.
 	if err != nil {
 		return status.Error(codes.Internal, "unexpected error")
 	}
+	stream.SendMsg(io.EOF)
 
 	return nil
 }

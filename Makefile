@@ -42,5 +42,11 @@ download_grpc_pkg:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
 
+
+evans:
+	./evans -r repl -p 8080
+	
+
 .PHONY: gen clean server client test cert 
+
 
