@@ -72,7 +72,7 @@ func main() {
 	waitGroup.Wait()
 
 	log.Print("we end the recive data from user ")
-
+	//
 }
 
 func testCreateLaptop(laptopClient *client.LaptopClient) {
